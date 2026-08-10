@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%AD%90%3C/text%3E%3C/svg%3E" />
+  <title>KOCKAA Count Quest — character cast</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #070b1e; }
+    canvas { display: block; }
+    #hdr {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 5; text-align: center;
+      padding: 20px 16px 0; pointer-events: none;
+      font-family: "Trebuchet MS", ui-rounded, system-ui, sans-serif; color: #fff;
+    }
+    #hdr h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: .02em; }
+    #hdr p { margin: 5px 0 0; font-size: 13px; font-weight: 700; color: #8fa0d8; }
+  </style>
+</head>
+
+<body>
+  <div id="hdr">
+    <h1>KOCKAA Count Quest</h1>
+    <p>The cast — every shape generated in code, no models or images</p>
+  </div>
+
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js" } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    const TAU = Math.PI * 2;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0a1030, 0.018);
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+
+    /* ---------- space backdrop ---------- */
+    const skyGeo = new THREE.SphereGeometry(90, 32, 20);
+    const sky = new THREE.Mesh(skyGeo, new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { uT: { value: 0 } },
+      vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+      fragmentShader: `
+        varying vec3 vP; uniform float uT;
+        float h(vec2 p){ return fract(sin(dot(p,vec2(41.7,289.3)))*43758.5); }
+        void main(){
+          vec3 d=normalize(vP);
+          float y=d.y*.5+.5;
+          vec3 c=mix(vec3(.05,.04,.14), vec3(.10,.08,.30), y);
+          c=mix(c, vec3(.26,.12,.36), smoothstep(.45,.95,y));
+          vec2 sp=floor(d.xz/max(abs(d.y),.05)*40.);
+          float s=h(sp);
+          c += vec3(.95,.95,1.)*step(.992,s)*(.6+.4*sin(uT*2.+s*40.));
+          gl_FragColor=vec4(c,1.);
+        }`
+    }));
+    sky.frustumCulled = false;
+    scene.add(sky);
+
+    scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x241c46, 1.5));
+    const key = new THREE.DirectionalLight(0xfff0d8, 2.4);
+    key.position.set(6, 12, 9);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -16; key.shadow.camera.right = 16;
+    key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
+    key.shadow.bias = -0.0009;
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x7ab6ff, 1.5);
+    rim.position.set(-8, 4, -7);
+    scene.add(rim);
+
+    /* ---------- material helpers ---------- */
+    const M = (c, o = {}) => new THREE.MeshStandardMaterial(
+      Object.assign({ color: c, roughness: 0.42, metalness: 0.05 }, o));
+    const GLOSS = (c) => M(c, { roughness: 0.2, metalness: 0.15 });
+    const METAL = (c) => M(c, { roughness: 0.28, metalness: 0.85 });
+    const GLOW = (c, i = 1.1) => M(c, { emissive: c, emissiveIntensity: i, roughness: 0.3 });
+    const WHITE = M(0xffffff, { roughness: 0.35 });
+    const DARK = M(0x1b1f2e, { roughness: 0.35 });
+    const GLASS = new THREE.MeshPhysicalMaterial({
+      color: 0xbfe6ff, roughness: 0.05, metalness: 0, transparent: true,
+      opacity: 0.34, side: THREE.DoubleSide
+    });
+
+    function mesh(geo, mat, x = 0, y = 0, z = 0, parent) {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.castShadow = true; m.receiveShadow = true;
+      (parent || scene).add(m);
+      return m;
+    }
+
+    // The cuteness rule for every character: oversized head, big low-set eyes,
+    // rounded silhouette, tiny limbs.
+    function eyes(parent, opts = {}) {
+      const { y = 0, z = 0.62, sep = 0.3, r = 0.17, pupil = 0.085, look = 0.03 } = opts;
+      for (const s of [-1, 1]) {
+        const e = mesh(new THREE.SphereGeometry(r, 20, 16), WHITE, s * sep, y, z, parent);
+        e.scale.z = 0.58;
+        const p = mesh(new THREE.SphereGeometry(pupil, 16, 12), DARK,
+          s * sep + look, y - r * 0.08, z + r * 0.55, parent);
+        const g = mesh(new THREE.SphereGeometry(pupil * 0.36, 10, 8), WHITE,
+          s * sep + look + pupil * 0.3, y + pupil * 0.32, z + r * 0.72, parent);
+        g.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      }
+    }
+
+    function smile(parent, { y = -0.22, z = 0.66, r = 0.16, tube = 0.033 } = {}) {
+      const s = mesh(new THREE.TorusGeometry(r, tube, 8, 20, Math.PI), DARK, 0, y, z, parent);
+      s.rotation.z = Math.PI;
+      return s;
+    }
+
+    function antenna(parent, x, tilt, colour) {
+      const st = mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.6, 8), DARK, x, 0.72, 0, parent);
+      st.rotation.z = tilt;
+      st.position.x += Math.sin(-tilt) * 0.28;
+      st.position.y += 0.06;
+      mesh(new THREE.SphereGeometry(0.12, 14, 12), GLOW(colour, 1.4),
+        x + Math.sin(-tilt) * 0.58, 1.02 + Math.cos(tilt) * 0.08, 0, parent);
+    }
+
+    /* ---------- the cast ---------- */
+    const CAST = [];
+    const add = (name, unlock, build) => CAST.push({ name, unlock, build });
+
+    add('ASTRO', 'Starter', g => {
+      mesh(new THREE.CapsuleGeometry(0.42, 0.34, 6, 18), GLOSS(0xf2f4fa), 0, 0.42, 0, g);
+      mesh(new THREE.BoxGeometry(0.5, 0.46, 0.26), GLOSS(0xff8a3d), 0, 0.56, -0.42, g).geometry
+        .translate(0, 0, 0);
+      for (const s of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.13, 0.24, 4, 10), GLOSS(0xf2f4fa), s * 0.5, 0.48, 0.02, g);
+        a.rotation.z = s * 0.5;
+        mesh(new THREE.CapsuleGeometry(0.14, 0.18, 4, 10), GLOSS(0xff8a3d), s * 0.2, 0.02, 0, g);
+      }
+      mesh(new THREE.TorusGeometry(0.4, 0.06, 8, 22), GLOSS(0xff8a3d), 0, 0.8, 0, g).rotation.x = Math.PI / 2;
+      const head = new THREE.Group(); head.position.y = 1.2; g.add(head);
+      mesh(new THREE.SphereGeometry(0.44, 24, 18), M(0xffd9b0), 0, 0, 0, head);
+      eyes(head, { y: 0.02, z: 0.36, sep: 0.16, r: 0.11, pupil: 0.055 });
+      smile(head, { y: -0.16, z: 0.4, r: 0.1, tube: 0.024 });
+      const hb = mesh(new THREE.SphereGeometry(0.6, 26, 20), GLASS, 0, 0.02, 0, head);
+      hb.castShadow = false;
+      mesh(new THREE.TorusGeometry(0.58, 0.07, 8, 26), GLOSS(0xffffff), 0, 0.02, 0, head)
+        .rotation.x = Math.PI / 2;
+    });
+
+    add('BLIP', '25 correct', g => {
+      const b = mesh(new THREE.CapsuleGeometry(0.34, 0.2, 6, 16), GLOSS(0x4fd38a), 0, 0.36, 0, g);
+      for (const s of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.1, 0.2, 4, 10), GLOSS(0x4fd38a), s * 0.42, 0.4, 0, g);
+        a.rotation.z = s * 0.7;
+      }
+      const head = new THREE.Group(); head.position.y = 1.02; g.add(head);
+      const h = mesh(new THREE.SphereGeometry(0.56, 26, 20), GLOSS(0x62e39c), 0, 0, 0, head);
+      h.scale.set(1, 1.1, 0.92);
+      // one big eye
+      const e = mesh(new THREE.SphereGeometry(0.3, 24, 18), WHITE, 0, 0.04, 0.36, head);
+      e.scale.z = 0.6;
+      mesh(new THREE.SphereGeometry(0.15, 18, 14), DARK, 0.03, 0.01, 0.5, head);
+      const gl = mesh(new THREE.SphereGeometry(0.055, 10, 8), WHITE, 0.09, 0.09, 0.58, head);
+      gl.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      smile(head, { y: -0.3, z: 0.42, r: 0.13, tube: 0.028 });
+      antenna(head, -0.16, 0.34, 0xffe066);
+      antenna(head, 0.16, -0.34, 0xffe066);
+    });
+
+    add('BOLT', 'Finish Planet 1', g => {
+      mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.7, 18), METAL(0xa8b4c8), 0, 0.5, 0, g);
+      mesh(new THREE.TorusGeometry(0.5, 0.07, 8, 22), GLOW(0x39d7ff, 0.8), 0, 0.3, 0, g)
+        .rotation.x = Math.PI / 2;
+      for (const s of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.11, 0.3, 4, 10), METAL(0x8c98ad), s * 0.56, 0.56, 0, g);
+        a.rotation.z = s * 0.42;
+        mesh(new THREE.SphereGeometry(0.13, 12, 10), METAL(0xd6dde8), s * 0.72, 0.3, 0, g);
+      }
+      mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.2, 20), DARK, 0, 0.1, 0, g);
+      const head = new THREE.Group(); head.position.y = 1.18; g.add(head);
+      const h = mesh(new THREE.BoxGeometry(0.86, 0.72, 0.7), METAL(0xc3cddb), 0, 0, 0, head);
+      const scr = mesh(new THREE.BoxGeometry(0.68, 0.5, 0.06), DARK, 0, 0.02, 0.36, head);
+      for (const s of [-1, 1]) {
+        const e = mesh(new THREE.CircleGeometry(0.1, 18), GLOW(0x39d7ff, 1.8), s * 0.15, 0.06, 0.4, head);
+      }
+      const m2 = mesh(new THREE.BoxGeometry(0.24, 0.045, 0.04), GLOW(0x39d7ff, 1.4), 0, -0.14, 0.4, head);
+      mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), METAL(0x8c98ad), 0, 0.5, 0, head);
+      mesh(new THREE.SphereGeometry(0.1, 14, 12), GLOW(0xff5d8f, 1.5), 0, 0.68, 0, head);
+    });
+
+    add('COMET', '10 in a row', g => {
+      mesh(new THREE.CapsuleGeometry(0.36, 0.22, 6, 16), GLOSS(0xffa94d), 0, 0.38, 0, g);
+      for (const s of [-1, 1])
+        mesh(new THREE.CapsuleGeometry(0.11, 0.14, 4, 10), GLOSS(0xffa94d), s * 0.22, 0.06, 0.06, g);
+      const tail = mesh(new THREE.CapsuleGeometry(0.09, 0.5, 4, 10), GLOSS(0xffa94d), 0, 0.5, -0.42, g);
+      tail.rotation.x = -0.9;
+      const head = new THREE.Group(); head.position.y = 1.0; g.add(head);
+      mesh(new THREE.SphereGeometry(0.5, 24, 18), GLOSS(0xffb866), 0, 0, 0, head);
+      for (const s of [-1, 1]) {
+        const ear = mesh(new THREE.ConeGeometry(0.17, 0.3, 4), GLOSS(0xffa94d), s * 0.27, 0.44, 0, head);
+        ear.rotation.z = s * 0.22;
+        mesh(new THREE.ConeGeometry(0.09, 0.16, 4), GLOSS(0xff8fae), s * 0.27, 0.44, 0.04, head);
+      }
+      eyes(head, { y: 0.04, z: 0.4, sep: 0.19, r: 0.13, pupil: 0.062 });
+      mesh(new THREE.SphereGeometry(0.055, 12, 10), GLOSS(0xff8fae), 0, -0.1, 0.48, head);
+      smile(head, { y: -0.2, z: 0.44, r: 0.11, tube: 0.024 });
+      const hb = mesh(new THREE.SphereGeometry(0.66, 26, 20), GLASS, 0, 0.06, 0, head);
+      hb.castShadow = false;
+    });
+
+    add('NOVA', '3 stars on a moon', g => {
+      const s = new THREE.Shape();
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 0.36 : 0.86;
+        const a = -Math.PI / 2 + i * Math.PI / 5;
+        i ? s.lineTo(Math.cos(a) * r, Math.sin(a) * r) : s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      s.closePath();
+      const star = mesh(new THREE.ExtrudeGeometry(s, {
+        depth: 0.3, bevelEnabled: true, bevelSize: 0.07, bevelThickness: 0.07, bevelSegments: 3
+      }), GLOW(0xffd54a, 0.55), 0, 1.0, -0.15, g);
+      const head = new THREE.Group(); head.position.set(0, 1.0, 0.2); g.add(head);
+      eyes(head, { y: 0.08, z: 0.0, sep: 0.2, r: 0.14, pupil: 0.07 });
+      smile(head, { y: -0.2, z: 0.05, r: 0.13, tube: 0.028 });
+      for (const sx of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.08, 0.18, 4, 10), GLOW(0xffc233, 0.5), sx * 0.78, 0.58, 0, g);
+        a.rotation.z = sx * 0.8;
+        mesh(new THREE.CapsuleGeometry(0.1, 0.14, 4, 10), GLOW(0xffc233, 0.5), sx * 0.2, 0.12, 0, g);
+      }
+    });
+
+    add('PIP', 'Count 100 things', g => {
+      const b = mesh(new THREE.SphereGeometry(0.62, 26, 20), GLOSS(0xa77bf0), 0, 0.72, 0, g);
+      b.scale.set(1, 0.94, 1);
+      for (const s of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.1, 0.16, 4, 10), GLOSS(0xa77bf0), s * 0.58, 0.66, 0, g);
+        a.rotation.z = s * 0.9;
+        mesh(new THREE.CapsuleGeometry(0.13, 0.1, 4, 10), GLOSS(0x8f5fe0), s * 0.24, 0.14, 0.04, g);
+      }
+      const head = new THREE.Group(); head.position.y = 0.86; g.add(head);
+      // three eyes: one high, two low
+      const eye = (x, y, r) => {
+        const e = mesh(new THREE.SphereGeometry(r, 20, 16), WHITE, x, y, 0.5, head);
+        e.scale.z = 0.55;
+        mesh(new THREE.SphereGeometry(r * 0.48, 14, 12), DARK, x, y - r * 0.06, 0.62, head);
+      };
+      eye(0, 0.3, 0.15);
+      eye(-0.23, 0.02, 0.17);
+      eye(0.23, 0.02, 0.17);
+      smile(head, { y: -0.28, z: 0.52, r: 0.15, tube: 0.03 });
+      antenna(head, 0, 0, 0x7ef0ff);
+    });
+
+    add('RUSTY', 'Finish a 1000+ run', g => {
+      mesh(new THREE.SphereGeometry(0.66, 24, 18, 0, TAU, 0, Math.PI / 2), METAL(0xd8a15a), 0, 0.36, 0, g);
+      mesh(new THREE.CylinderGeometry(0.68, 0.72, 0.22, 20), METAL(0x9a6f3c), 0, 0.28, 0, g);
+      mesh(new THREE.TorusGeometry(0.5, 0.06, 8, 22), GLOW(0xffb703, 0.7), 0, 0.72, 0, g)
+        .rotation.x = Math.PI / 2;
+      const head = new THREE.Group(); head.position.y = 1.14; g.add(head);
+      const h = mesh(new THREE.SphereGeometry(0.46, 24, 18), METAL(0xe8c08a), 0, 0, 0, head);
+      const e = mesh(new THREE.SphereGeometry(0.24, 20, 16), WHITE, 0, 0.02, 0.32, head);
+      e.scale.z = 0.5;
+      mesh(new THREE.SphereGeometry(0.12, 16, 12), DARK, 0.02, 0.0, 0.44, head);
+      mesh(new THREE.TorusGeometry(0.26, 0.05, 8, 20), METAL(0x9a6f3c), 0, 0.02, 0.34, head);
+      // satellite dish
+      const dish = mesh(new THREE.SphereGeometry(0.3, 18, 12, 0, TAU, 0, Math.PI / 2.6),
+        METAL(0xf0e3cf), 0.38, 0.48, -0.1, head);
+      dish.rotation.set(-0.5, 0, -0.7);
+      mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.34, 8), METAL(0x9a6f3c), 0.28, 0.34, -0.06, head)
+        .rotation.z = -0.7;
+      smile(head, { y: -0.24, z: 0.36, r: 0.11, tube: 0.026 });
+    });
+
+    add('LUNA', 'All 4 planets', g => {
+      const s = new THREE.Shape();
+      s.absarc(0, 0, 0.8, Math.PI * 0.42, Math.PI * 1.58, false);
+      s.absarc(0.34, 0, 0.78, Math.PI * 1.42, Math.PI * 0.58, true);
+      const moon = mesh(new THREE.ExtrudeGeometry(s, {
+        depth: 0.3, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 3
+      }), GLOSS(0xdfe6ff), 0, 1.02, -0.15, g);
+      const head = new THREE.Group(); head.position.set(-0.16, 1.02, 0.22); g.add(head);
+      eyes(head, { y: 0.1, z: 0.0, sep: 0.19, r: 0.13, pupil: 0.065 });
+      smile(head, { y: -0.16, z: 0.04, r: 0.12, tube: 0.026 });
+      for (const c of [[-0.3, 0.5, 0.1], [0.1, -0.42, 0.14], [-0.44, -0.2, 0.08]]) {
+        const cr = mesh(new THREE.SphereGeometry(c[2], 12, 10), M(0xc3cbe8), c[0], 1.02 + c[1], 0.02, g);
+        cr.castShadow = false;
+      }
+      for (const sx of [-1, 1]) {
+        const a = mesh(new THREE.CapsuleGeometry(0.08, 0.16, 4, 10), GLOSS(0xdfe6ff), sx * 0.72, 0.6, 0, g);
+        a.rotation.z = sx * 0.85;
+        mesh(new THREE.CapsuleGeometry(0.1, 0.12, 4, 10), GLOSS(0xc3cbe8), sx * 0.22, 0.12, 0, g);
+      }
+    });
+
+    /* ---------- name plate ---------- */
+    function plate(name, unlock, locked) {
+      const c = document.createElement('canvas');
+      c.width = 512; c.height = 176;
+      const x = c.getContext('2d');
+      x.clearRect(0, 0, 512, 176);
+      x.textAlign = 'center';
+      x.font = '900 62px "Trebuchet MS", Arial, sans-serif';
+      x.fillStyle = locked ? '#7c88b8' : '#ffffff';
+      x.fillText(name, 256, 66);
+      x.font = '700 30px "Trebuchet MS", Arial, sans-serif';
+      x.fillStyle = locked ? '#5d68a0' : '#8fd7ff';
+      x.fillText(locked ? '🔒 ' + unlock : unlock, 256, 116);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.72),
+        new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+      return m;
+    }
+
+    /* ---------- lay the cast out ---------- */
+    const COLS = 4, GAPX = 3.05, GAPZ = 3.5;
+    const holders = [];
+    CAST.forEach((c, i) => {
+      const col = i % COLS, row = (i / COLS) | 0;
+      const root = new THREE.Group();
+      root.position.set((col - (COLS - 1) / 2) * GAPX, row === 0 ? 0.95 : 0, row * GAPZ);
+      scene.add(root);
+
+      // pedestal
+      const ped = mesh(new THREE.CylinderGeometry(1.0, 1.12, 0.22, 30), M(0x2a2f57, {
+        roughness: 0.5, metalness: 0.3
+      }), 0, -0.11, 0, root);
+      const ring = mesh(new THREE.TorusGeometry(1.02, 0.05, 8, 34),
+        GLOW(i === 0 ? 0x39d7ff : 0x3a4488, i === 0 ? 1.5 : 0.5), 0, 0.0, 0, root);
+      ring.rotation.x = Math.PI / 2;
+      ring.castShadow = false;
+
+      const spin = new THREE.Group();
+      root.add(spin);
+      c.build(spin);
+      holders.push({ spin, root, phase: i * 0.7 });
+
+      // back-row labels float ABOVE the character; the front row would hide them otherwise
+      const p = plate(c.name, c.unlock, i > 0);
+      if (row === 0) { p.position.set(0, 2.45, 0.35); p.rotation.x = -0.10; }
+      else { p.position.set(0, -0.55, 1.25); p.rotation.x = -0.42; }
+      root.add(p);
+    });
+
+    camera.position.set(0, 7.4, 14.2);
+    camera.lookAt(0, 0.95, GAPZ * 0.52);
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    let t0 = performance.now();
+    function loop(now) {
+      requestAnimationFrame(loop);
+      const t = now / 1000;
+      sky.material.uniforms.uT.value = t;
+      for (const h of holders) {
+        h.spin.rotation.y = Math.sin(t * 0.45 + h.phase) * 0.55;
+        h.spin.position.y = Math.sin(t * 1.5 + h.phase) * 0.06;
+      }
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(loop);
+    window.__READY = true;
+  </script>
+</body>
+
+</html>

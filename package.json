@@ -1,0 +1,13 @@
+{
+  "name": "kockaa-count-quest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "KOCKAA Count Quest — a single-file 3D counting game for children",
+  "author": "KOCKAA (https://www.etsy.com/shop/KOCKAA)",
+  "scripts": {
+    "serve": "python -m http.server 8795",
+    "verify": "node final.mjs"
+  },
+  "devDependencies": { "playwright-core": "^1.56.1" }
+}
