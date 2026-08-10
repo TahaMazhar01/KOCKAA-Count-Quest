@@ -1817,20 +1817,49 @@
       heroSpin = new THREE.Group();
       hero.add(heroSpin);
       setHeroChar(Save.char());
-      // There is no ground in space, so no contact shadow — a thruster glow instead.
+      // The chase camera sits behind the character, so a single rear plume points
+      // straight at the viewer and covers the face. Two small jets set wide on the
+      // back read as a jetpack and frame the character instead of hiding it.
       const c = document.createElement('canvas'); c.width = c.height = 96;
       const x = c.getContext('2d');
       const grd = x.createRadialGradient(48, 48, 0, 48, 48, 48);
-      grd.addColorStop(0, 'rgba(255,200,120,.95)');
-      grd.addColorStop(.4, 'rgba(255,130,60,.5)');
-      grd.addColorStop(1, 'rgba(255,120,50,0)');
+      grd.addColorStop(0, 'rgba(255,242,205,.95)');
+      grd.addColorStop(.35, 'rgba(255,150,60,.5)');
+      grd.addColorStop(1, 'rgba(255,110,40,0)');
       x.fillStyle = grd; x.fillRect(0, 0, 96, 96);
-      shadowBlob = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), new THREE.MeshBasicMaterial({
-        map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false,
-        blending: THREE.AdditiveBlending
-      }));
-      shadowBlob.position.set(0, -0.72, 1.2);
-      hero.add(shadowBlob);
+      const flameTex = new THREE.CanvasTexture(c);
+
+      shadowBlob = new THREE.Group();
+      shadowBlob.position.set(0, -0.16, 0.5);
+      heroSpin.add(shadowBlob);
+
+      const jets = [];
+      const coneGeo = new THREE.ConeGeometry(0.14, 0.62, 12, 1, true);
+      coneGeo.translate(0, -0.31, 0);
+      for (const sx of [-1, 1]) {
+        const jet = new THREE.Group();
+        jet.position.set(sx * 0.46, -0.14, 0.16);
+        jet.rotation.set(-Math.PI / 2 + 0.22, 0, sx * -0.16);   // splayed out and down
+        const flame = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
+          color: 0xffb44d, transparent: true, opacity: .85,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+        }));
+        jet.add(flame);
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: flameTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+        }));
+        halo.scale.setScalar(0.72);
+        jet.add(halo);
+        // the nozzle it comes out of, so it is clearly part of the character
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.2, 10),
+          new THREE.MeshStandardMaterial({ color: 0x8e9bb4, roughness: .4, metalness: .7 }));
+        nozzle.rotation.x = Math.PI / 2;
+        nozzle.position.set(sx * 0.46, -0.14, 0.06);
+        shadowBlob.add(nozzle);
+        shadowBlob.add(jet);
+        jets.push(flame);
+      }
+      hero.userData.jets = jets;
     }
     function setHeroChar(id) {
       if (heroChar) { heroSpin.remove(heroChar); }
@@ -1858,12 +1887,18 @@
       hero.position.x = clamp(hero.position.x, -limit, limit);
 
       hero.position.y = 0.9 + Math.sin(time * 1.9) * 0.14;
-      const lean = S.tween ? clamp((S.tween.to - hero.position.x) * .22, -.34, .34) : 0;
+      // Pitched forward so it reads as flying rather than standing upright in
+      // mid-air. More lean the faster the stage runs.
+      const flying = S.phase === 'play' && !S.paused;
+      const pitch = flying ? -0.30 - clamp(S.speed / 90, 0, .12) : -0.08;
+      heroSpin.rotation.x = damp(heroSpin.rotation.x, pitch, 5, dt);
+      const lean = S.tween ? clamp((S.tween.to - hero.position.x) * .26, -.42, .42) : 0;
       heroSpin.rotation.z = damp(heroSpin.rotation.z, lean, 9, dt);
-      heroSpin.rotation.y = damp(heroSpin.rotation.y, -lean * .6, 7, dt);
-      // thruster flickers with the flight
-      const fl = 1 + Math.sin(time * 24) * .12 + Math.sin(time * 37) * .07;
-      shadowBlob.scale.set(fl, fl * (1.1 + Math.sin(time * 30) * .12), 1);
+      heroSpin.rotation.y = damp(heroSpin.rotation.y, -lean * .7, 7, dt);
+      // the plume pulses along its length, which reads as thrust
+      const fl = 1 + Math.sin(time * 26) * .18 + Math.sin(time * 41) * .1;
+      const js = hero.userData.jets;
+      if (js) { js[0].scale.set(1, fl, 1); js[1].scale.set(1, 2 - fl, 1); }
     }
 
     function move(dir) {
