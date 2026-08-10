@@ -1688,7 +1688,9 @@
 
     function spawnOrbs(n) {
       let placed = 0;
-      const spread = Math.max(S.spacing * 1.15, n * 3.4);
+      // ~0.8 s of flight between gems, so each spoken number has room to finish
+      const gap = Math.max(3.4, S.speed * 0.82);
+      const spread = Math.max(S.spacing * 1.15, (n - 1) * gap);
       // Objects arrive in short same-lane runs so a child can actually sweep the
       // whole set up. Scattering them at random makes collecting them all
       // impossible, which breaks the count.
@@ -2766,6 +2768,21 @@
           speechSynthesis.speak(u);
         } catch (e) { }
       }
+      // Counting is the one place where cancelling is wrong: each new number was
+      // cutting the previous one off mid-word. This queues instead, speaks faster
+      // so a number fits between two gems, and simply skips a number if speech is
+      // already backed up — the chime and the ten-frame still land either way.
+      function count(n) {
+        if (!enabled || !ok || !voice) return;
+        try {
+          if (speechSynthesis.pending) return;          // already behind — skip this one
+          const u = new SpeechSynthesisUtterance(spell(n));
+          u.voice = voice; u.lang = voice.lang || 'en-GB';
+          u.rate = 1.25; u.pitch = 1.15; u.volume = 1;
+          speechSynthesis.speak(u);
+        } catch (e) { }
+      }
+
       function sayQuestion(q) {
         if (q.kind === 'next') say('What comes after ' + spell(q.answer - 1) + '?');
         else if (q.kind === 'missing') say(spell(q.answer - 1) + ', blank, ' + spell(q.answer + 1) + '.');
@@ -2781,7 +2798,7 @@
         if (!enabled || !ok) return false;
         try { return !!(speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending)); } catch (e) { return false; }
       }
-      return { init, say, sayQuestion, busy, setEnabled(v) { enabled = v; if (!v && 'speechSynthesis' in window) speechSynthesis.cancel(); }, get available() { return ok; } };
+      return { init, say, count, sayQuestion, busy, setEnabled(v) { enabled = v; if (!v && 'speechSynthesis' in window) speechSynthesis.cancel(); }, get available() { return ok; } };
     })();
     /* =====================================================================
        22. UI
@@ -3131,7 +3148,7 @@
             Save.bump('counted', 1);
             renderTray(S.tCollected, 'f');
             Audio.count(S.tCollected - 1);
-            Voice.say(spell(S.tCollected));
+            Voice.count(S.tCollected);
             Particles.burst(o.m.position.x, o.m.position.y, o.z, 0xffc233, 8);
           }
           if (o.z > 8) { o.live = false; o.m.visible = false; }
