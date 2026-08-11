@@ -131,8 +131,11 @@
     details#settings[open] summary { background: rgba(255, 194, 51, .18); border-color: var(--gold); color: var(--gold); }
 
     /* ---------------- HUD ---------------- */
-    #hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; opacity: 0; transition: opacity .5s; }
-    #hud.on { opacity: 1; }
+    #hud {
+      position: fixed; inset: 0; z-index: 20; pointer-events: none;
+      opacity: 0; visibility: hidden; transition: opacity .5s, visibility .5s;
+    }
+    #hud.on { opacity: 1; visibility: visible; }
 
     .glass {
       background: var(--panel); border: 2px solid var(--line); border-radius: 16px;
@@ -314,8 +317,11 @@
     }
 
     /* hub label overlay */
-    #hubUI { position: fixed; inset: 0; z-index: 22; pointer-events: none; opacity: 0; transition: opacity .4s; }
-    #hubUI.on { opacity: 1; }
+    #hubUI {
+      position: fixed; inset: 0; z-index: 22; pointer-events: none;
+      opacity: 0; visibility: hidden; transition: opacity .4s, visibility .4s;
+    }
+    #hubUI.on { opacity: 1; visibility: visible; }
     #hubTitle {
       position: absolute; top: 18px; left: 50%; transform: translateX(-50%); text-align: center;
       font-size: clamp(19px, 3.6vw, 30px); font-weight: 900; text-shadow: 0 4px 20px rgba(0,0,0,.7);
