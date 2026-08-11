@@ -149,7 +149,18 @@
       color: #93a7de; display: block; margin-bottom: 1px;
     }
     #qbig { font-size: clamp(26px, 5vw, 46px); font-weight: 900; line-height: 1.05; white-space: nowrap; }
-    #qbig .cell { display: inline-block; min-width: .72em; text-align: center; }
+    #qbig .cell {
+      display: inline-block; min-width: .72em; text-align: center;
+      padding: 0 .13em; margin: 0 .11em;
+    }
+    /* a faint dot between numbers so the eye splits them even at a glance */
+    #qbig .cell + .cell::before {
+      content: ''; display: inline-block; width: 0;
+    }
+    #qbig.spaced .cell { margin: 0 .22em; }
+    /* long rows must not push the panel off a phone screen */
+    #qbig.long { font-size: clamp(20px, 3.4vw, 32px); }
+    #qbig.vlong { font-size: clamp(16px, 2.8vw, 26px); }
     #qbig .cell.dim { color: #8fa3dd; }
     #qbig .cell.ell { color: #6d80b8; letter-spacing: -.08em; }
     #qbig .cell.blank {
@@ -1116,9 +1127,15 @@
       // The digit is the whole point of a gate, so it fills the plate and sits
       // near-black on white. Thin borders and padding made it read as vague.
       x.fillStyle = '#ffffff'; roundRect(x, 8, 8, S - 16, S - 16, 46); x.fill();
-      const t = k.length;
+      // Fit the digits to the plate instead of using fixed sizes — a 4-digit
+      // number was rendering far smaller than the plate could carry.
       x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.font = '900 ' + (t <= 2 ? 400 : t === 3 ? 296 : 224) + 'px "Trebuchet MS", Arial, sans-serif';
+      const FIT = S - 74;
+      let fs = k.length <= 2 ? 400 : 340;
+      x.font = '900 ' + fs + 'px "Trebuchet MS", Arial, sans-serif';
+      let wmeas = x.measureText(k).width;
+      if (wmeas > FIT) { fs = Math.floor(fs * FIT / wmeas); }
+      x.font = '900 ' + fs + 'px "Trebuchet MS", Arial, sans-serif';
       x.lineWidth = 26; x.lineJoin = 'round'; x.strokeStyle = '#ffffff';
       x.strokeText(k, S / 2, S / 2 + 16);
       x.fillStyle = '#0e1430'; x.fillText(k, S / 2, S / 2 + 16);
@@ -2815,6 +2832,17 @@
           ? '<span class="cell blank">' + blankTxt + '</span>'
           : '<span class="cell dim">' + c + '</span>').join('');
       }
+      function sizeRow() {
+        // widen the gaps for multi-digit rows, and shrink the type if the row is
+        // long enough to threaten the panel width on a phone
+        const cells = [...elBig.querySelectorAll('.cell')];
+        const chars = cells.reduce((n, c) => n + c.textContent.length, 0);
+        const multi = cells.some(c => c.textContent.length > 1);
+        elBig.classList.toggle('spaced', multi);
+        elBig.classList.toggle('long', chars > 8 && chars <= 13);
+        elBig.classList.toggle('vlong', chars > 13);
+      }
+
       function showQuestion(q) {
         elLead.textContent = q.lead;
         if (q.cells) elBig.innerHTML = row(q.cells.map(c => c === 'x' ? '?' : c), q.blank, '?');
@@ -2822,6 +2850,7 @@
         else if (q.kind === 'maketen') elBig.innerHTML = row([String(q.set), '+', 'x', '=', '10'], 2, '?');
         else if (q.kind === 'line') elBig.innerHTML = '<span class="cell blank">' + q.answer + '</span>';
         else elBig.innerHTML = '<span class="cell blank">?</span>';
+        sizeRow();
         elPanel.classList.remove('pop'); void elPanel.offsetWidth; elPanel.classList.add('pop');
       }
       function fillBlank(v) {
