@@ -1633,6 +1633,7 @@
 
     /* ---- start a stage ---- */
     function startStage(pi, mi, s) {
+      bumpNav();
       S.pi = pi; S.mi = mi; S.s = s;
       const P = stageParams(PLANETS[pi], PLANETS[pi].moons[mi], s);
       S.lanes = P.lanes; S.speed = P.speed; S.spacing = P.spacing; S.speedMul = 1;
@@ -1945,6 +1946,15 @@
     /* =====================================================================
        17. CAMERA
        ===================================================================== */
+    /* Every screen change bumps this. Work that was deferred with a timer —
+       countdown ticks, the warp landing, the unlock pop-up — captures the value
+       at the moment it was scheduled and does nothing if it no longer matches.
+       Without it a countdown that finishes after the player has walked back to
+       the menu still sets S.phase='play', and the camera then dives to the play
+       area, carrying the solar system out of view. */
+    let navGen = 0;
+    const bumpNav = () => ++navGen;
+
     const camState = { pos: new THREE.Vector3(0, 5, 14), look: new THREE.Vector3(), fly: null };
     function updateCamera(dt) {
       if (camState.fly) {
@@ -1989,7 +1999,9 @@
     function warpTo(where, done) {
       warpFx = 1;
       Audio.warp();
+      const gen = navGen;
       setTimeout(() => {
+        if (gen !== navGen) return;
         if (where === 'play') {
           camera.position.set(0, PLAY_Y + CFG.CAM.high, CFG.CAM.dist);
           camState.look.set(0, PLAY_Y + 1.4, CFG.CAM.ahead);
@@ -2291,8 +2303,10 @@
       }
 
       function show() {
+        bumpNav();
         S.phase = 'hub';
         level = 'system';
+        showMoonLabels(-1);
         hubRoot.visible = true;
         UI.hudOn(false);
         document.getElementById('hubUI').classList.add('on');
@@ -2889,8 +2903,11 @@
       function countdown(done) {
         const seq = ['3', '2', '1', 'GO!'];
         let i = 0;
+        const gen = navGen;
         elCd.classList.add('go');
+        const stop = () => { elCd.classList.remove('go'); elCd.firstElementChild.textContent = ''; };
         const tick = () => {
+          if (gen !== navGen) { stop(); return; }
           if (i >= seq.length) { elCd.classList.remove('go'); elCd.firstElementChild.textContent = ''; done(); return; }
           const sp = elCd.firstElementChild;
           sp.textContent = seq[i]; sp.style.animation = 'none'; void sp.offsetWidth; sp.style.animation = '';
@@ -2907,10 +2924,11 @@
         const box = $('sdStars'); box.innerHTML = '<i>★</i><i>★</i><i>★</i>';
         $('stageDone').classList.remove('hidden');
         const items = box.querySelectorAll('i');
-        for (let i = 0; i < stars; i++) setTimeout(() => items[i].classList.add('on'), 400 + i * 360);
+        const gen = navGen;
+        for (let i = 0; i < stars; i++) setTimeout(() => { if (gen === navGen) items[i].classList.add('on'); }, 400 + i * 360);
         const last = S.s >= 4;
         $('sdNext').textContent = last ? 'DONE ▶' : 'NEXT ▶';
-        if (gained) setTimeout(() => showUnlock(gained), 1700);
+        if (gained) setTimeout(() => { if (gen === navGen) showUnlock(gained); }, 1700);
       }
       function showUnlock(c) {
         $('ulSub').textContent = c.name + ' joined the crew!';

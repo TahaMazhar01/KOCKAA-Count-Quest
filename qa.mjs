@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 import fs from "node:fs";
 
 const CHROME = process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe";
-const URL = process.env.GAME_URL || "https://kockaa-count-quest.vercel.app/";
+const URL = process.env.GAME_URL || process.env.QA_URL || "https://kockaa-count-quest.vercel.app/";
 fs.mkdirSync("qa", { recursive: true });
 
 const B = await chromium.launch({
