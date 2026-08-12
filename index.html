@@ -2680,24 +2680,36 @@ const t="169",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
         // stops two of them landing on top of each other when orbits cross —
         // and an unreadable label is worse than no label. Fade whichever of an
         // overlapping pair is farther from the camera.
+        // A planet can put two plates on screen, its name and its LOCKED marker,
+        // and the audit's example is a LOCKED marker sitting behind a different
+        // planet's name plate - so every plate has to be tested against every
+        // plate, not just name against name.
         for (let i = 0; i < planetNodes.length; i++) {
-          const q = labProj[i] || (labProj[i] = { x: 0, y: 0, z: 0, hx: 0, hy: 0, hide: false });
-          const lab = planetNodes[i].node.userData.label;
-          q.hide = false;
-          if (!lab) { q.hx = q.hy = 0; continue; }
-          lab.getWorldPosition(_v1);
-          _v1.project(camera);
-          q.x = _v1.x; q.y = _v1.y; q.z = _v1.z;
-          q.hx = lab.scale.x * .9 / Math.max(.05, camera.aspect);
-          q.hy = lab.scale.y * .9;
+          const u = planetNodes[i].node.userData;
+          const q = labProj[i] || (labProj[i] = { z: 0, n: 0, p: [{}, {}], hide: false });
+          q.hide = false; q.n = 0;
+          for (const sp of [u.label, u.lockMark]) {
+            if (!sp || !sp.visible) continue;
+            sp.getWorldPosition(_v1);
+            _v1.project(camera);
+            if (q.n === 0) q.z = _v1.z;
+            const r = q.p[q.n++];
+            r.x = _v1.x; r.y = _v1.y;
+            r.hx = sp.scale.x * .9 / Math.max(.05, camera.aspect);
+            r.hy = sp.scale.y * .9;
+          }
         }
         for (let i = 0; i < planetNodes.length; i++) {
           for (let j = i + 1; j < planetNodes.length; j++) {
             const a = labProj[i], b = labProj[j];
-            if (!a.hx || !b.hx) continue;
-            if (Math.abs(a.x - b.x) < a.hx + b.hx && Math.abs(a.y - b.y) < a.hy + b.hy) {
-              (a.z > b.z ? a : b).hide = true;
+            let hit = false;
+            for (let x = 0; x < a.n && !hit; x++) {
+              for (let y = 0; y < b.n && !hit; y++) {
+                const m = a.p[x], o = b.p[y];
+                if (Math.abs(m.x - o.x) < m.hx + o.hx && Math.abs(m.y - o.y) < m.hy + o.hy) hit = true;
+              }
             }
+            if (hit) (a.z > b.z ? a : b).hide = true;
           }
         }
         for (let i = 0; i < planetNodes.length; i++) {
