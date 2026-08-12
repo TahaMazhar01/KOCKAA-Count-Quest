@@ -169,16 +169,11 @@
       display: inline-block; min-width: .72em; text-align: center;
       padding: 0 .13em; margin: 0 .11em;
     }
-    /* a faint dot between numbers so the eye splits them even at a glance */
-    #qbig .cell + .cell::before {
-      content: ''; display: inline-block; width: 0;
-    }
     #qbig.spaced .cell { margin: 0 .22em; }
     /* long rows must not push the panel off a phone screen */
     #qbig.long { font-size: clamp(20px, 3.4vw, 32px); }
     #qbig.vlong { font-size: clamp(16px, 2.8vw, 26px); }
     #qbig .cell.dim { color: #8fa3dd; }
-    #qbig .cell.ell { color: #6d80b8; letter-spacing: -.08em; }
     #qbig .cell.blank {
       color: var(--gold); border-bottom: .13em solid var(--gold); margin: 0 .09em;
       padding: 0 .05em; min-width: .9em; animation: bp 1.5s ease-in-out infinite;
@@ -200,6 +195,17 @@
     #tray { position: absolute; left: 14px; bottom: 108px; padding: 8px 10px; display: none; }
     #tray.on { display: block; }
     #trayWrap { display: flex; gap: 7px; align-items: flex-end; }
+    /* wrong-answer explanation for the sequence kinds: the row the child was
+       looking at, with the gap filled in */
+    .strip { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 5px; }
+    .strip .sc {
+      font-size: clamp(17px, 4.4vw, 25px); font-weight: 900; line-height: 1;
+      padding: 5px 9px; border-radius: 10px; border: 2px solid rgba(150,175,255,.28);
+      color: #a9bbe8; background: rgba(255,255,255,.04);
+    }
+    .strip .sc.fill { color: #06210f; background: var(--good); border-color: #8ef0b6; }
+    .strip .sc.tgt { color: var(--gold); border-style: dashed; border-color: rgba(255,194,51,.6); }
+    .strip .sc.op { border: 0; background: none; color: #7f8fc4; padding: 0 1px; font-size: .8em; }
     .tf { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
     .tf i {
       width: 13px; height: 13px; border-radius: 4px; border: 2px solid rgba(150,175,255,.4);
@@ -825,8 +831,8 @@
     const rr = (a, b) => a + Math.random() * (b - a);
 
     // scratch objects — nothing is allocated inside the frame loop
-    const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
-    const _c1 = new THREE.Color(), _obj = new THREE.Object3D(), _q1 = new THREE.Quaternion();
+    const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
+    const _c1 = new THREE.Color(), _obj = new THREE.Object3D();
 
     const NAMES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
       'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
@@ -1253,6 +1259,26 @@
       const num = document.createElement('div');
       num.id = 'trayNum'; num.textContent = n;
       trayWrap.appendChild(num);
+    }
+    function stripHTML(q) {
+      // Every sequence kind already carries its own explanation material, so a
+      // miss can show the child *why* instead of restating the number they just
+      // got wrong. q.cells is the row they were looking at with a hole in it.
+      const sc = (t, cls) => '<span class="sc ' + (cls || '') + '">' + t + '</span>';
+      if (q.kind === 'nearest' && q.fixed) {
+        return '<div class="strip">' + sc(q.fixed[0], q.fixed[0] === q.answer ? 'fill' : '')
+          + sc(q.target, 'tgt') + sc(q.fixed[1], q.fixed[1] === q.answer ? 'fill' : '') + '</div>';
+      }
+      if (q.kind === 'compare' && q.fixed) {
+        return '<div class="strip">' + q.fixed.map(v => sc(v, v === q.answer ? 'fill' : '')).join('') + '</div>';
+      }
+      if (!q.cells || q.blank < 0) return '';
+      let h = '';
+      for (let i = 0; i < q.cells.length; i++) {
+        if (i && q.step) h += sc('+' + q.step, 'op');
+        h += (i === q.blank) ? sc(q.answer, 'fill') : sc(q.cells[i], '');
+      }
+      return '<div class="strip">' + h + '</div>';
     }
     function frameHTML(n) {
       // small inline ten-frame used in wrong-answer feedback
@@ -1862,7 +1888,7 @@
     }
 
     /* ---- resolution ---- */
-    function resolve(ok, shown) {
+    function resolve(ok) {
       const q = S.q;
       if (ok) {
         S.correct++; S.streak++;
@@ -1900,7 +1926,8 @@
         Audio.wrong();
         // explanatory, not just accurate: show the quantity as a ten-frame
         const showFrame = (q.answer <= 20 && (q.kind === 'howmany' || q.kind === 'match' || q.kind === 'maketen'));
-        UI.feedback(false, q.answer, 'It is ' + spell(q.answer), '🙂', showFrame ? q.answer : 0);
+        UI.feedback(false, q.answer, 'It is ' + spell(q.answer), '🙂',
+          showFrame ? q.answer : 0, showFrame ? '' : stripHTML(q));
         Voice.say(showFrame && q.answer > 10
           ? 'It is ' + spell(q.answer) + '. Ten and ' + spell(q.answer - 10) + '.'
           : 'It is ' + spell(q.answer) + '.');
@@ -2090,7 +2117,10 @@
         // instead — at 390x740 both ends were 46% off screen, taking the 0 and
         // the 100 with them, which is the child's whole frame of reference.
         const halfV = Math.tan(camera.fov * Math.PI / 360);
-        const fit = (CFG.LINE_HALF + 1.5) / Math.max(.05, halfV * camera.aspect) + 9;
+        // the end labels are 3.4-wide plates centred on the bar ends, so the
+        // thing that has to fit is 13 + 1.7, not 13 - fitting the bar alone left
+        // the 0 and the 100 sliced in half by the screen edge
+        const fit = (CFG.LINE_HALF + 2.6) / Math.max(.05, halfV * camera.aspect) + 9;
         const dist = lineMode ? Math.max(15.5, fit) : CFG.CAM.dist - portrait * 1.2;
         const high = (lineMode ? 3.4 : CFG.CAM.high) - portrait * .5;
         _v1.set(hero.position.x * .45, high, dist);
@@ -2559,22 +2589,6 @@
         refresh();
       }
 
-      function toMoon(pi, mi) {
-        openPanel(pi); return;   // moons are scenery now; the panel does the choosing
-      }
-      function toMoonOld(pi, mi) {
-        if (!moonUnlocked(pi, mi)) { Audio.boing(); return; }
-        selP = pi; selM = mi; level = 'moon';
-        planetNodes.forEach(p => p.moons.forEach(m => m.pads.forEach(pd => pd.visible = false)));
-        planetNodes[pi].moons[mi].pads.forEach(pd => pd.visible = true);
-        document.getElementById('hubBack').classList.add('on');
-        const mn = PLANETS[pi].moons[mi];
-        setLabel(mn.name, 'Pick a stage · ★ ' + Save.moonStars(pi, mi) + ' / 15');
-        planetNodes[pi].moons[mi].node.getWorldPosition(_v1);
-        flyCam(new THREE.Vector3(_v1.x, _v1.y + 3.4, _v1.z + 6.4), _v1.clone());
-        refresh();
-      }
-
       function toStage(pi, mi, s) {
         if (!stageUnlocked(pi, mi, s)) { Audio.boing(); return; }
         if (PLANETS[pi].needsRange) { UI.askRange(() => beginStage(pi, mi, s)); return; }
@@ -2645,7 +2659,7 @@
           if (p.node.userData.clouds) p.node.userData.clouds.rotation.y += dt * .62;
           p.ring.rotation.z += dt * .22;
           p.moons.forEach((m, mi) => {
-            m.ang += dt * (level === 'moon' && pi === selP && mi === selM ? .25 : .7);
+            m.ang += dt * .7;
             const rr2 = 6.4;
             m.node.position.set(Math.cos(m.ang) * rr2, Math.sin(m.ang * 1.3) * .9, Math.sin(m.ang) * rr2);
             m.body.rotation.y += dt * .7;
@@ -3061,14 +3075,15 @@
         if (!b) return;
         b.textContent = v; b.classList.add('filled');
       }
-      function feedback(good, big, txt, emo, frameN) {
+      function feedback(good, big, txt, emo, frameN, html) {
         elFb.classList.toggle('bad', !good);
         elFbBig.textContent = big; elFbTxt.textContent = txt; elFbEmo.textContent = emo;
-        elFbFrame.classList.toggle('on', frameN > 0);
-        elFbFrame.innerHTML = frameN > 0 ? frameHTML(frameN) : '';
+        const body = html || (frameN > 0 ? frameHTML(frameN) : '');
+        elFbFrame.classList.toggle('on', !!body);
+        elFbFrame.innerHTML = body;
         elFb.classList.add('on');
         clearTimeout(fbT);
-        fbT = setTimeout(() => elFb.classList.remove('on'), frameN > 0 ? 1600 : 1100);
+        fbT = setTimeout(() => elFb.classList.remove('on'), body ? 1600 : 1100);
       }
       let lastCoin = null, lastNeg = null, lastOn = null, lastStreak = null;
       function updateCoins(dt) {
@@ -3236,7 +3251,7 @@
     addEventListener('blur', clearKeys);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { clearKeys(); Audio.suspend(); }
-      else if (S.phase !== 'menu' && !S.paused) Audio.resume();
+      else if (!S.paused) Audio.resume();
     });
 
     function bindPress(el, fn) {
