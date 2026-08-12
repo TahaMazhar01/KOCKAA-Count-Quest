@@ -681,6 +681,7 @@
       MAX_SET: 20,              // never ask a child to count past this
       ASSIST_AFTER: 3, ASSIST_GATES: 2, ASSIST_MUL: 0.8,
       MASTERY_HITS: 3,          // correct-in-a-row before a size stops appearing
+      NUM_CACHE_MAX: 96,        // live number plates kept; beyond this the oldest is released
       FLASH_MAX: 1.8, FLASH_MIN: 1.0,   // Quick Look hold, stage 1 → stage 5
       COINS: { correct: 10, wrong: -5, step: 2, cap: 10 },
       LINE_HALF: 13,            // world half-width of the number-line bar
@@ -829,7 +830,12 @@
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.1;
-      renderer.shadowMap.enabled = Q.shadow > 0;
+      // mk() hard-codes receiveShadow = false and every other mesh inherits that
+      // default, so the depth pass had casters and not one receiver — ~20% of
+      // draw calls producing nothing visible. Q.shadow stays in the presets
+      // because the quality chips read them by name, and the per-mesh castShadow
+      // flags it gates are harmless with the map switched off.
+      renderer.shadowMap.enabled = false;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       container.appendChild(renderer.domElement);
       // Without preventDefault the browser will not even try to restore the
@@ -852,15 +858,6 @@
       scene.add(hemi);
       keyLight = new THREE.DirectionalLight(0xfff0d8, 2.3);
       keyLight.position.set(9, 16, 11);
-      if (Q.shadow > 0) {
-        keyLight.castShadow = true;
-        keyLight.shadow.mapSize.set(Q.shadow, Q.shadow);
-        const S = 22;
-        keyLight.shadow.camera.left = -S; keyLight.shadow.camera.right = S;
-        keyLight.shadow.camera.top = S; keyLight.shadow.camera.bottom = -S;
-        keyLight.shadow.camera.near = 1; keyLight.shadow.camera.far = 90;
-        keyLight.shadow.bias = -0.0009; keyLight.shadow.normalBias = 0.03;
-      }
       scene.add(keyLight, keyLight.target);
       rimLight = new THREE.DirectionalLight(0x7ab6ff, 1.35);
       rimLight.position.set(-10, 5, -9);
@@ -1190,6 +1187,25 @@
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
       numCache.set(k, tex);
+      // Unbounded until now: a 1000-5000 stage mints four new 512x512 canvases a
+      // round and dispose() was never called anywhere in the file, so GPU and
+      // canvas memory only ever grew. Keep the pre-warmed 0-20 set, keep
+      // whatever a gate or a line label is showing right now, release the rest.
+      if (numCache.size > CFG.NUM_CACHE_MAX) {
+        const live = new Set();
+        for (const g of gates) if (g.front && g.front.map) live.add(g.front.map);
+        for (const l of lineLabels) if (l.material && l.material.map) live.add(l.material.map);
+        for (const key of numCache.keys()) {
+          const n = +key;
+          if (n >= 0 && n <= 20) continue;
+          const old = numCache.get(key);
+          if (live.has(old)) continue;
+          old.dispose();
+          if (old.image) { old.image.width = old.image.height = 0; }
+          numCache.delete(key);
+          break;
+        }
+      }
       return tex;
     }
 
@@ -1682,7 +1698,7 @@
       S.lanes = P.lanes; S.speed = P.speed; S.spacing = P.spacing; S.speedMul = 1;
       S.rounds = P.rounds; S.round = 0; S.correct = 0; S.wrong = 0;
       S.streak = 0; S.wrongStreak = 0; S.assist = 0;
-      S.dots = []; S.mastered = new Set();
+      S.dots = []; S.mastered = new Set(); S.hits = {};
       S.lane = (S.lanes - 1) >> 1; S.laneTarget = S.lane;
       S.tween = null; S.queue.length = 0;
       S.waiting = false; S.gapT = 0; S.qState = 'idle';
@@ -1837,7 +1853,10 @@
         Audio.correct(Math.min(S.streak, 8));
         // mastery: stop drilling a size the child has clearly got
         if (q.set) {
-          const k = 's' + q.answer;
+          // sizeFor() draws a set size and rejects it on 's' + n, so mastery has
+          // to be recorded against the set size too. Count On answers q.from +
+          // q.set, so keying on the answer meant its mastery could never fire.
+          const k = 's' + q.set;
           S.hits = S.hits || {};
           S.hits[k] = (S.hits[k] || 0) + 1;
           if (S.hits[k] >= CFG.MASTERY_HITS) S.mastered.add(k);
@@ -1849,6 +1868,8 @@
         Voice.say(spell(q.answer) + '! ' + praise);
       } else {
         S.wrong++; S.streak = 0; S.wrongStreak++;
+        // "three in a row" has to actually be in a row
+        if (q.set) { S.hits = S.hits || {}; S.hits['s' + q.set] = 0; }
         addCoins(CFG.COINS.wrong);
         if (S.dots[S.round] !== 'hit') S.dots[S.round] = 'miss';
         Audio.wrong();
@@ -1937,7 +1958,20 @@
       hero.userData.jets = jets;
     }
     function setHeroChar(id) {
-      if (heroChar) { heroSpin.remove(heroChar); }
+      if (heroChar) {
+        heroSpin.remove(heroChar);
+        // Removing from the scene graph does not free a GL buffer; only
+        // dispose() does. Each rig is 20-40 fresh geometries, so browsing the
+        // crew leaked every one of them for the life of the page. The four
+        // module-level materials are shared by every rig and by the orbs and
+        // gates — disposing those would take the whole scene down with them.
+        heroChar.traverse(o => {
+          if (!o.isMesh) return;
+          if (o.geometry) o.geometry.dispose();
+          const m = o.material;
+          if (m && m !== M_INK && m !== M_WHITE && m !== M_DARK && m !== M_GLASS) m.dispose();
+        });
+      }
       heroChar = buildCrewMember(id);
       heroChar.position.y = -0.78;
       heroChar.scale.setScalar(0.78);
