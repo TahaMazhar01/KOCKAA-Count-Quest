@@ -447,6 +447,36 @@
       #bar { margin-top: 9px; }
     }
   </style>
+  <script>
+    /* The game is one ES module that resolves `three` over the
+       network. If that resolution fails — offline tablet, school filter, CDN
+       outage — the module never executes, and every piece of error handling in
+       this file lives inside it. This classic script is the only code that
+       still runs in that case, so it owns the "tell the child something" job. */
+    (function () {
+      var shown = false;
+      function showBootError() {
+        if (shown) return;
+        var e = document.getElementById('err'), m = document.getElementById('errMsg'),
+            st = document.getElementById('start');
+        if (!e) return;
+        shown = true;
+        if (m) m.textContent = 'This game could not download the part it needs to draw in 3D. Please check the internet connection and reload the page.';
+        e.classList.remove('hidden');
+        if (st) st.classList.add('hidden');
+      }
+      window.addEventListener('error', function (ev) {
+        if (ev.target && ev.target.tagName === 'SCRIPT') showBootError();
+      }, true);
+      /* Generous: the module itself evaluates in well under a second once the
+         library has arrived, but the download can be slow on a poor
+         connection. __GAME is set at the end of module evaluation, long before
+         the galaxy finishes building, so this does not race a slow warm-up. */
+      window.__bootWatch = setTimeout(function () {
+        if (!window.__GAME) showBootError();
+      }, 20000);
+    })();
+  </script>
 </head>
 
 <body>
@@ -800,6 +830,16 @@
       renderer.shadowMap.enabled = Q.shadow > 0;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       container.appendChild(renderer.domElement);
+      // Without preventDefault the browser will not even try to restore the
+      // context, and animate() would keep calling render() on a dead one — a
+      // fully drawn, fully responsive HUD over an empty background, forever.
+      renderer.domElement.addEventListener('webglcontextlost', e => {
+        e.preventDefault();
+        cancelAnimationFrame(rafId);
+        S.paused = true;
+        UI.hudOn(false);
+        fail('The graphics went to sleep. Please reload the page to carry on.');
+      }, false);
 
       scene = new THREE.Scene();
       scene.fog = new THREE.FogExp2(0x141238, 0.0075);
@@ -1966,6 +2006,11 @@
         camera.lookAt(_v1);
         camState.look.copy(_v1);
         if (k >= 1) { camState.pos.copy(camera.position); camState.fly = null; if (f.done) f.done(); }
+        // The sky is a BackSide shell of radius SKY_R centred on the camera. A
+        // flight between the hub and the play area covers ~930 units, so if the
+        // shell is left behind the camera ends up outside it and the near
+        // hemisphere is culled — a black band across the top of the screen.
+        skyMesh.position.copy(camera.position);
         return;
       }
       if (S.phase === 'play' || S.phase === 'countdown' || S.phase === 'done') {
@@ -3504,6 +3549,7 @@
       time: () => time,
       get ready() { return built; }
     };
+    clearTimeout(window.__bootWatch);   // the module ran; the boot watchdog is not needed
   </script>
 </body>
 
