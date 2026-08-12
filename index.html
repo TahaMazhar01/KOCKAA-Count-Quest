@@ -390,6 +390,7 @@
       .sBtn { width: 60px; }
       .sBtn b { font-size: 17px; }
       #continueBtn { padding: 13px 26px; font-size: 17px; bottom: 16px; }
+      #hubChar { bottom: 96px; }        /* clear the CTA when it wraps to two lines */
     }
 
     #err { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
@@ -682,6 +683,7 @@
       MASTERY_HITS: 3,          // correct-in-a-row before a size stops appearing
       FLASH_MAX: 1.8, FLASH_MIN: 1.0,   // Quick Look hold, stage 1 → stage 5
       COINS: { correct: 10, wrong: -5, step: 2, cap: 10 },
+      LINE_HALF: 13,            // world half-width of the number-line bar
       LINE: { perfect: 0.03, good: 0.08, fair: 0.15 },
       CAM: { dist: 11.5, high: 4.4, ahead: -7, fov: 60 },
       HUB: { flight: 0.9 },
@@ -1558,15 +1560,16 @@
       lineGroup.position.set(0, 0.4, -9);
       lineGroup.visible = false;
       playRoot.add(lineGroup);
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(26, .28, .28), GLOW(0xdfe6ff, .35));
+      const H = CFG.LINE_HALF;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(H * 2, .28, .28), GLOW(0xdfe6ff, .35));
       lineGroup.add(bar);
       for (const s of [-1, 1]) {
         const cap = new THREE.Mesh(new THREE.CylinderGeometry(.34, .34, .6, 12), GLOW(0x4fd8ff, .8));
-        cap.position.set(s * 13, 0, 0); cap.rotation.z = Math.PI / 2; lineGroup.add(cap);
+        cap.position.set(s * H, 0, 0); cap.rotation.z = Math.PI / 2; lineGroup.add(cap);
       }
       for (let i = 0; i <= 10; i++) {
         const t = new THREE.Mesh(new THREE.BoxGeometry(.12, i % 5 === 0 ? .95 : .55, .12), GLOW(0x9fb4ff, .4));
-        t.position.set(-13 + i * 2.6, 0, 0); lineGroup.add(t);
+        t.position.set(-H + i * (H * 2 / 10), 0, 0); lineGroup.add(t);
       }
       lineMarker = new THREE.Group();
       const pin = new THREE.Mesh(new THREE.ConeGeometry(.5, 1.3, 14), GLOW(0xffc233, 1.2));
@@ -1592,7 +1595,7 @@
         lineLabels[i].position.x = x;
         lineLabels[i].visible = true;
       };
-      put(0, min, -13); put(1, max, 13);
+      put(0, min, -CFG.LINE_HALF); put(1, max, CFG.LINE_HALF);
       lineLabels[2].visible = false;
     }
     /* =====================================================================
@@ -2022,7 +2025,14 @@
       if (S.phase === 'play' || S.phase === 'countdown' || S.phase === 'done') {
         const portrait = clamp((1.45 - camera.aspect) * .8, 0, .7);
         const lineMode = S.qState === 'line';
-        const dist = (lineMode ? 15.5 : CFG.CAM.dist) - portrait * 1.2;
+        // The `portrait` nudge is right for the narrow lane corridor and exactly
+        // wrong for the number line: it moves the camera *closer* as the aspect
+        // narrows, while the line is the widest thing in the game. Fit the line
+        // instead — at 390x740 both ends were 46% off screen, taking the 0 and
+        // the 100 with them, which is the child's whole frame of reference.
+        const halfV = Math.tan(camera.fov * Math.PI / 360);
+        const fit = (CFG.LINE_HALF + 1.5) / Math.max(.05, halfV * camera.aspect) + 9;
+        const dist = lineMode ? Math.max(15.5, fit) : CFG.CAM.dist - portrait * 1.2;
         const high = (lineMode ? 3.4 : CFG.CAM.high) - portrait * .5;
         _v1.set(hero.position.x * .45, high, dist);
         _v1.y += PLAY_Y;
@@ -2353,6 +2363,26 @@
         document.getElementById('hubStars').textContent = '★ ' + Save.total() + ' / ' + Save.maxTotal();
       }
 
+      // The play camera compensates for a narrow aspect; the hub never did, so
+      // in phone portrait the outer orbits fell outside the frustum and those
+      // planets could not be tapped until they swung back into view.
+      function hubDist() {
+        const halfV = Math.tan(camera.fov * Math.PI / 360);
+        return Math.max(74, 42 / Math.max(.05, halfV * camera.aspect));
+      }
+      function hubEye() {
+        const d = hubDist();
+        return new THREE.Vector3(0, 30 * (d / 74), d);
+      }
+
+      function refit() {
+        if (S.phase !== 'hub' || level !== 'system' || camState.fly) return;
+        camera.position.copy(hubEye());
+        camState.pos.copy(camera.position);
+        camState.look.set(0, -1.5, 0);
+        camera.lookAt(camState.look);
+      }
+
       function show() {
         bumpNav();
         S.phase = 'hub';
@@ -2367,7 +2397,7 @@
         closePanel();
         labelContinue();
         setLabel('Pick a planet', Save.name() ? 'Hi ' + Save.name() + '! Tap a world, or press the green button' : 'Tap a world, or press the green button');
-        flyCam(new THREE.Vector3(0, 30, 74), new THREE.Vector3(0, -1.5, 0), 1.1);
+        flyCam(hubEye(), new THREE.Vector3(0, -1.5, 0), 1.1);
       }
 
       function setLabel(t, s) {
@@ -2383,7 +2413,7 @@
         planetNodes.forEach(p => p.moons.forEach(m => m.pads.forEach(pd => pd.visible = false)));
         document.getElementById('hubBack').classList.remove('on');
         setLabel('Pick a planet', 'Tap a world to begin');
-        flyCam(new THREE.Vector3(0, 30, 74), new THREE.Vector3(0, -1.5, 0));
+        flyCam(hubEye(), new THREE.Vector3(0, -1.5, 0));
         refresh();
       }
 
@@ -2563,7 +2593,7 @@
         });
       }
 
-      return { build, show, back, onPick, update, refresh, toSystem, continueHere, openPanel, closePanel, nextOpen, get level() { return level; } };
+      return { build, show, back, onPick, update, refresh, toSystem, continueHere, openPanel, closePanel, nextOpen, refit, get level() { return level; } };
     })();
 
     /* =====================================================================
@@ -3142,7 +3172,7 @@
       const guess = q.min + S.linePos * (q.max - q.min);
       const err = Math.abs(guess - q.answer) / Math.max(1, q.max - q.min);
       const trueT = (q.answer - q.min) / Math.max(1, q.max - q.min);
-      lineTrue.position.x = -13 + trueT * 26;
+      lineTrue.position.x = -CFG.LINE_HALF + trueT * CFG.LINE_HALF * 2;
       lineTrue.visible = true;
       document.getElementById('dropBtn').classList.remove('on');
       const ok = err <= CFG.LINE.fair;
@@ -3204,7 +3234,7 @@
           updateDebris(dz, dt);
           if (active) updateRound(dt, dz);
           // marker on the number line
-          if (S.qState === 'line') lineMarker.position.x = -13 + S.linePos * 26;
+          if (S.qState === 'line') lineMarker.position.x = -CFG.LINE_HALF + S.linePos * CFG.LINE_HALF * 2;
         }
       }
 
@@ -3371,6 +3401,7 @@
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
       renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pr));
+      Hub.refit();
     }
     addEventListener('resize', onResize);
 
