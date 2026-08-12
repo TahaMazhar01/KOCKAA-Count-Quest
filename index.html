@@ -1790,8 +1790,14 @@
 
     function spawnGates(q) {
       const opts = q.options;
+      // compare/nearest always offer exactly two options while the corridor can
+      // be three, four or five lanes wide. Left at lane 0..1 the rest of the
+      // corridor scores wrong, and at five lanes the hero's own start lane has
+      // no gate over it at all. Centre them and carry the lane on the gate.
+      const off = Math.floor((S.lanes - Math.min(opts.length, GATE_MAX)) / 2);
       for (let i = 0; i < opts.length && i < GATE_MAX; i++) {
         const g = gates[i];
+        g.lane = i + off;
         g.val = opts[i];
         g.correct = opts[i] === q.answer;
         g.state = 'fly'; g.t = 0;
@@ -1802,7 +1808,7 @@
         g.ring.material.color.setHex(col); g.ring.material.opacity = .5;
         g.g.visible = true;
         g.g.scale.setScalar(.01);
-        g.g.position.set(laneX(i), 1.4, -(S.spacing + S.speed * CFG.SPEAK_LEAD));
+        g.g.position.set(laneX(g.lane), 1.4, -(S.spacing + S.speed * CFG.SPEAK_LEAD));
         g.g.rotation.set(0, 0, 0);
       }
       S.gateCount = Math.min(opts.length, GATE_MAX);
@@ -3240,6 +3246,11 @@
           // everything has gone past — now ask the cardinality question
           if (S.tCollected === 0) { nextRound(); return; }   // never ask "how many? none"
           q.answer = S.tCollected;
+          // The ten-frame dots stay — they are the one-to-one-correspondence
+          // scaffold. The numeral does not: it is the cardinal value, which is
+          // precisely what "how many?" is asking the child to produce.
+          const tn = document.getElementById('trayNum');
+          if (tn) tn.style.visibility = 'hidden';
           q.options = buildOptions(q.answer, Math.max(1, q.answer - 8), q.answer + 8, S.lanes);
           UI.showQuestion(Object.assign({}, q, { lead: 'How many?', cells: null, kind: 'howmany' }));
           spawnGates(q);
@@ -3254,14 +3265,22 @@
         flashT += dt;
         // Subitising wants a short look, but under a second the child never even
         // registers the group. 1.8 s on stage 1 easing down to 1.0 s on stage 5.
-        const hold = q.kind === 'match' ? 3.0 : (CFG.FLASH_MAX - S.s * (CFG.FLASH_MAX - CFG.FLASH_MIN) / 4);
+        const hold = q.kind === 'match'
+          ? (PLANETS[S.pi].moons[S.mi].hold || 9)
+          : (CFG.FLASH_MAX - S.s * (CFG.FLASH_MAX - CFG.FLASH_MIN) / 4);
         for (let i = 0; i < S.orbCount; i++) {
           const o = orbs[i];
           o.m.position.z = -13;
           if (o.gem) o.gem.rotation.y += dt * 1.4;
         }
         if (flashT > hold) {
-          for (let i = 0; i < S.orbCount; i++) { orbs[i].live = false; orbs[i].m.visible = false; }
+          // Quick Look hides the group — recalling it is the point. Match keeps it
+          // on screen, which is what makes it a matching task and not a second,
+          // slower Quick Look. S.flashKeep was already being written for exactly
+          // this and had never been read.
+          if (!S.flashKeep) {
+            for (let i = 0; i < S.orbCount; i++) { orbs[i].live = false; orbs[i].m.visible = false; }
+          }
           spawnGates(q);
           S.qState = 'fly';
           Voice.say('How many?');
@@ -3281,7 +3300,7 @@
           g.t += dt;
           if (g.state === 'fly') {
             g.g.scale.setScalar(easeOut(clamp(g.t * 3.2, 0, 1)));
-            g.g.position.set(laneX(i), 1.4 + Math.sin(time * 2 + g.phase) * .16, S.gateZ);
+            g.g.position.set(laneX(g.lane), 1.4 + Math.sin(time * 2 + g.phase) * .16, S.gateZ);
             g.ring.rotation.z += dt * .5;
             for (let k = 0; k < g.shards.length; k++) {
               const an = (k / 3) * TAU + time * .6 + g.phase;
@@ -3296,11 +3315,11 @@
             if (k >= 1) g.g.visible = false;
           } else if (g.state === 'sink') {
             const k = clamp(g.t / .55, 0, 1);
-            g.g.position.set(laneX(i), 1.4 - k * 2.6, S.gateZ);
+            g.g.position.set(laneX(g.lane), 1.4 - k * 2.6, S.gateZ);
             g.front.opacity = 1 - k; g.side.opacity = 1 - k; g.ring.material.opacity = .5 * (1 - k);
             if (k >= 1) g.g.visible = false;
           } else if (g.state === 'reveal') {
-            g.g.position.set(laneX(i), 1.4 + Math.sin(time * 6) * .12, S.gateZ);
+            g.g.position.set(laneX(g.lane), 1.4 + Math.sin(time * 6) * .12, S.gateZ);
             g.side.color.setHex(0x45d67f);
             g.side.emissive.setHex(0x45d67f);
             g.side.emissiveIntensity = .6 + Math.sin(time * 12) * .35;
@@ -3326,9 +3345,14 @@
 
     function resolveGates() {
       const hx = hero.position.x;
-      let hit = -1;
+      // The hit window is deliberately generous (0.62 of a 3.6-unit lane), which
+      // makes adjacent windows overlap by 0.864 units. Breaking on the first
+      // match handed that whole overlap to the lower lane index, so a child
+      // visibly nearer the correct gate could still be scored wrong.
+      let hit = -1, best = Infinity;
       for (let i = 0; i < S.gateCount; i++) {
-        if (Math.abs(hx - laneX(i)) <= CFG.LANE_W * CFG.HIT_TOL) { hit = i; break; }
+        const d = Math.abs(hx - laneX(gates[i].lane));
+        if (d <= CFG.LANE_W * CFG.HIT_TOL && d < best) { best = d; hit = i; }
       }
       const ci = gates.findIndex((g, i) => i < S.gateCount && g.correct);
       for (let i = 0; i < S.gateCount; i++) { gates[i].state = 'sink'; gates[i].t = 0; }
