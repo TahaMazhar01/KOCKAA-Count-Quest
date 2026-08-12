@@ -541,14 +541,18 @@
             <button class="chip on" data-s="voice">🗣 Voice</button>
           </div>
         </div>
+        <div class="grp">
+          <label>Grown-ups</label>
+          <div class="credit" style="margin:0;text-align:left">
+            <a href="https://www.etsy.com/shop/KOCKAA" target="_blank" rel="noopener noreferrer">Visit the KOCKAA shop</a>
+          </div>
+        </div>
       </details>
 
       <div id="bar"><div id="barFill"></div></div>
       <div id="loadTxt">Building the galaxy…</div>
       <div class="stars-row" id="startStars"></div>
-      <div class="credit">Developed by
-        <a href="https://www.etsy.com/shop/KOCKAA" target="_blank" rel="noopener noreferrer">KOCKAA</a>
-      </div>
+      <div class="credit">Developed by <b>KOCKAA</b></div>
     </div>
   </div>
 
@@ -2131,6 +2135,7 @@
        ===================================================================== */
     const Hub = (() => {
       let sun, planetNodes = [], level = 'system', selP = 0, selM = 0;
+      const labProj = [];       // reused per frame; the hub loop must not allocate
       const pickables = [];
       const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 
@@ -2397,6 +2402,7 @@
           if (p.node.userData.atm) p.node.userData.atm.material.opacity = open ? .16 : .05;
           if (p.node.userData.label) {
             p.node.userData.label.material.opacity = open ? 1 : .42;
+            p.node.userData.labBase = open ? 1 : .42;   // update() fades from this
             if (!open && !p.node.userData.lockMark) {
               const lk = labelPlate('🔒 LOCKED', '', .10);
               lk.position.y = -4.4; p.node.add(lk); p.node.userData.lockMark = lk;
@@ -2646,6 +2652,35 @@
             m.pads.forEach((pd, s) => { pd.rotation.y += dt * .8; });
           });
         });
+        // The plates are screen-space sprites with depthTest off, so nothing
+        // stops two of them landing on top of each other when orbits cross —
+        // and an unreadable label is worse than no label. Fade whichever of an
+        // overlapping pair is farther from the camera.
+        for (let i = 0; i < planetNodes.length; i++) {
+          const q = labProj[i] || (labProj[i] = { x: 0, y: 0, z: 0, hx: 0, hy: 0, hide: false });
+          const lab = planetNodes[i].node.userData.label;
+          q.hide = false;
+          if (!lab) { q.hx = q.hy = 0; continue; }
+          lab.getWorldPosition(_v1);
+          _v1.project(camera);
+          q.x = _v1.x; q.y = _v1.y; q.z = _v1.z;
+          q.hx = lab.scale.x * .9 / Math.max(.05, camera.aspect);
+          q.hy = lab.scale.y * .9;
+        }
+        for (let i = 0; i < planetNodes.length; i++) {
+          for (let j = i + 1; j < planetNodes.length; j++) {
+            const a = labProj[i], b = labProj[j];
+            if (!a.hx || !b.hx) continue;
+            if (Math.abs(a.x - b.x) < a.hx + b.hx && Math.abs(a.y - b.y) < a.hy + b.hy) {
+              (a.z > b.z ? a : b).hide = true;
+            }
+          }
+        }
+        for (let i = 0; i < planetNodes.length; i++) {
+          const u = planetNodes[i].node.userData, hide = labProj[i].hide;
+          if (u.label) u.label.material.opacity = hide ? 0 : (u.labBase === undefined ? 1 : u.labBase);
+          if (u.lockMark) u.lockMark.material.opacity = hide ? 0 : 1;
+        }
       }
 
       return { build, show, back, onPick, update, refresh, toSystem, continueHere, openPanel, closePanel, nextOpen, refit, get level() { return level; } };
@@ -3035,14 +3070,22 @@
         clearTimeout(fbT);
         fbT = setTimeout(() => elFb.classList.remove('on'), frameN > 0 ? 1600 : 1100);
       }
+      let lastCoin = null, lastNeg = null, lastOn = null, lastStreak = null;
       function updateCoins(dt) {
         S.coinsShown = damp(S.coinsShown, S.coins, 9, dt);
         if (Math.abs(S.coinsShown - S.coins) < .4) S.coinsShown = S.coins;
-        elCoin.textContent = Math.round(S.coinsShown);
-        elCoinBox.classList.toggle('neg', S.coins < 0);
+        // animate() calls this every frame. The damped value settles but the
+        // writes did not stop, so a layout-invalidating string assignment ran
+        // 60x a second to set the same number. No reset hook is needed: the
+        // damp always converges on the real total, so a stage resetting coins
+        // produces a changed value here and the write happens.
+        const shown = Math.round(S.coinsShown);
+        if (shown !== lastCoin) { elCoin.textContent = shown; lastCoin = shown; }
+        const neg = S.coins < 0;
+        if (neg !== lastNeg) { elCoinBox.classList.toggle('neg', neg); lastNeg = neg; }
         const on = S.streak >= 3;
-        elStreak.classList.toggle('on', on);
-        if (on) elStreakVal.textContent = S.streak;
+        if (on !== lastOn) { elStreak.classList.toggle('on', on); lastOn = on; }
+        if (on && S.streak !== lastStreak) { elStreakVal.textContent = S.streak; lastStreak = S.streak; }
       }
       function shakeCoins() {
         elCoinBox.classList.remove('shake'); void elCoinBox.offsetWidth; elCoinBox.classList.add('shake');
@@ -3628,19 +3671,27 @@
       else { S.coins = 0; startStage(S.pi, S.mi, S.s + 1); }
     });
     byId('ulOk').addEventListener('click', () => { byId('unlockModal').classList.add('hidden'); buildPickers(); });
-    byId('rGo').addEventListener('click', () => {
-      byId('rangeModal').classList.add('hidden');
-      if (UI._rangeDone) UI._rangeDone();
-    });
-    byId('rBack').addEventListener('click', () => byId('rangeModal').classList.add('hidden'));
-    byId('rCustom').addEventListener('click', () => {
+    function commitCustomRange() {
       let a = clamp(parseInt(byId('rMin').value, 10) || 0, 0, 5000);
       let b = clamp(parseInt(byId('rMax').value, 10) || 100, 1, 5000);
       if (b <= a) b = a + 10;
       S.range = { min: a, max: Math.min(b, 5000) };
       byId('rMin').value = a; byId('rMax').value = S.range.max;
       document.querySelectorAll('#ranges .rbtn').forEach(x => x.classList.remove('on'));
+    }
+    byId('rGo').addEventListener('click', () => {
+      // Typing 0 and 50 and pressing START used to play the previously selected
+      // range and throw the typed values away without a word. Only commit when
+      // they actually differ, so choosing a preset is not overwritten.
+      const a = parseInt(byId('rMin').value, 10), b = parseInt(byId('rMax').value, 10);
+      if (Number.isFinite(a) && Number.isFinite(b) && (a !== S.range.min || b !== S.range.max)) {
+        commitCustomRange();
+      }
+      byId('rangeModal').classList.add('hidden');
+      if (UI._rangeDone) UI._rangeDone();
     });
+    byId('rBack').addEventListener('click', () => byId('rangeModal').classList.add('hidden'));
+    byId('rCustom').addEventListener('click', commitCustomRange);
     bindPress(byId('aLeft'), () => act(-1));
     bindPress(byId('aRight'), () => act(1));
     bindPress(byId('dropBtn'), dropMarker);
