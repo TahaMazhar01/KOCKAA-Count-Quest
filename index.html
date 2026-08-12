@@ -24,13 +24,18 @@
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     html, body {
+      /* iOS has ignored user-scalable=no since iOS 10, so the double-tap zoom is
+         still live on the canvas the child is tapping. `manipulation` on the
+         document keeps the overlays scrollable; `none` on the canvas, below,
+         removes the gesture where the game owns the input. */
+      touch-action: manipulation;
       margin: 0; padding: 0; height: 100%; overflow: hidden;
       background: #070b1e; color: var(--ink);
       font-family: "Trebuchet MS", ui-rounded, "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none;
     }
 
-    canvas { display: block; }
+    canvas { display: block; touch-action: none; }
     #app { position: fixed; inset: 0; }
     .hidden { display: none !important; }
     button { font-family: inherit; cursor: pointer; }
@@ -150,6 +155,14 @@
     #qlead {
       font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
       color: #93a7de; display: block; margin-bottom: 1px;
+    }
+    /* A child who cannot read yet has only the spoken prompt. With sound off, or
+       on a device with no English voice, "BIGGER" and "SMALLER" rounds are
+       visually identical — two numerals and two gates. The glyph is the third
+       channel, and it is always on. */
+    #qlead .glyph {
+      font-size: 2.1em; line-height: 0; vertical-align: -.18em;
+      margin-right: .5em; color: var(--gold); letter-spacing: 0;
     }
     #qbig { font-size: clamp(26px, 5vw, 46px); font-weight: 900; line-height: 1.05; white-space: nowrap; }
     #qbig .cell {
@@ -334,7 +347,7 @@
     }
     #hubBack.on { display: block; }
     #hubChar {
-      pointer-events: auto; position: absolute; bottom: 16px; right: 16px; padding: 10px 18px;
+      pointer-events: auto; position: absolute; bottom: 16px; right: 16px; padding: 11px 18px;
       border-radius: 15px; border: 2px solid var(--line); background: var(--panel); color: #cfe0ff;
       font-size: 14px; font-weight: 900;
     }
@@ -354,7 +367,7 @@
     #spTitle span { font-size: 12px; font-weight: 700; color: #9fb0e0; }
     .spBack {
       border: 2px solid var(--line); background: var(--panel); color: #cfe0ff;
-      border-radius: 14px; padding: 10px 16px; font-size: 14px; font-weight: 900;
+      border-radius: 14px; padding: 11px 16px; font-size: 14px; font-weight: 900;
     }
     .moonRow {
       background: rgba(22, 28, 62, .8); border: 2px solid var(--line); border-radius: 18px;
@@ -367,7 +380,7 @@
     .stageRow { display: flex; gap: 7px; flex-wrap: wrap; }
     .sBtn {
       width: 72px; border: 2px solid var(--line); background: rgba(255, 255, 255, .06);
-      border-radius: 14px; padding: 8px 4px 6px; color: #d6e2ff; transition: .14s;
+      border-radius: 14px; padding: 9px 4px 7px; color: #d6e2ff; transition: .14s;
     }
     .sBtn b { display: block; font-size: 20px; font-weight: 900; line-height: 1.1; }
     .sBtn i { font-style: normal; font-size: 11px; color: var(--gold); letter-spacing: 1px; }
@@ -405,7 +418,7 @@
     }
 
     @media (max-width: 620px) {
-      #pauseBtn, #menuBtn { top: 8px; bottom: auto; width: 42px; height: 42px; border-radius: 13px; font-size: 17px; }
+      #pauseBtn, #menuBtn { top: 8px; bottom: auto; width: 44px; height: 44px; border-radius: 13px; font-size: 17px; }
       #pauseBtn { left: 8px; } #menuBtn { left: 56px; }
       #prog { top: 8px; left: 106px; right: 8px; padding: 6px 9px; }
       #dots { max-width: none; gap: 3px; } .dot { width: 8px; height: 8px; }
@@ -426,16 +439,16 @@
     @media (max-height: 430px) {
       #qpanel { top: 6px; padding: 5px 10px 6px; }
       #qbig { font-size: clamp(20px, 3.4vw, 30px); }
-      #sayBtn { width: 38px; height: 38px; font-size: 18px; }
+      #sayBtn { width: 44px; height: 44px; font-size: 19px; }
       #arrows { bottom: 8px; } .arrow { width: 64px; height: 64px; font-size: 28px; border-radius: 19px; }
-      #pauseBtn, #menuBtn { width: 38px; height: 38px; font-size: 15px; bottom: 8px; top: auto; }
+      #pauseBtn, #menuBtn { width: 44px; height: 44px; font-size: 15px; bottom: 8px; top: auto; }
       #pauseBtn { left: 8px; } #menuBtn { left: 52px; }
       #tray { bottom: 80px; } #streak { bottom: 82px; }
       .modal .card { padding: 15px 18px; } .statrow { margin: 8px 0 11px; }
       .stat { padding: 6px 12px; min-width: 78px; } .stat b { font-size: 18px; }
       .bigstars { font-size: clamp(28px, 6vw, 40px); margin: 2px 0 7px; }
       .mbtn { padding: 10px 20px; font-size: 16px; }
-      #dropBtn { bottom: 82px; padding: 9px 22px; font-size: 16px; }
+      #dropBtn { bottom: 82px; padding: 13px 22px; font-size: 16px; min-height: 44px; }
     }
 
     @media (max-height: 700px), (max-width: 460px) {
@@ -446,6 +459,14 @@
       .bigbtn { margin-top: 11px; padding: 13px 22px; font-size: 21px; }
       .credit { margin-top: 9px; font-size: 11px; }
       #bar { margin-top: 9px; }
+    }
+
+    /* The blank cell already carries a static gold underline and gold text, so
+       stopping its pulse costs no affordance — it is still the only marked cell. */
+    @media (prefers-reduced-motion: reduce) {
+      #qbig .cell.blank, #coins.shake, .sBtn.nudge, .moonRow.nudge { animation: none; }
+      #qpanel.pop, #cd.go span, #qbig .cell.blank.filled { animation-duration: .01ms; }
+      .bigstars i, #fbCard, .bigbtn, .arrow, .sBtn { transition-duration: .01ms; }
     }
   </style>
   <script>
@@ -2978,8 +2999,20 @@
         elBig.classList.toggle('vlong', chars > 13);
       }
 
+      const GLYPH = {
+        next: '\u2192', back: '\u2190', missing: '\u2b1a', between: '\u2194',
+        skip: '\u21e5', nearest: '\u2248', maketen: '\u229e',
+        howmany: '\u003f', match: '\u003f', line: '\u2193'
+      };
+      function leadGlyph(q) {
+        if (q.kind === 'compare') return q.compareBigger ? '\u25b2' : '\u25bc';
+        return GLYPH[q.kind] || '';
+      }
       function showQuestion(q) {
-        elLead.textContent = q.lead;
+        // the glyph lives in #qlead, not #qbig — sizeRow() counts characters in
+        // #qbig to pick its size classes and would mis-trigger on it
+        const g = leadGlyph(q);
+        elLead.innerHTML = (g ? '<span class="glyph">' + g + '</span>' : '') + q.lead;
         if (q.cells) elBig.innerHTML = row(q.cells.map(c => c === 'x' ? '?' : c), q.blank, '?');
         else if (q.kind === 'compare') elBig.innerHTML = row([String(q.fixed[0]), String(q.fixed[1])], -1, '');
         else if (q.kind === 'maketen') elBig.innerHTML = row([String(q.set), '+', 'x', '=', '10'], 2, '?');
